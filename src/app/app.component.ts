@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { MatToolbarModule } from '@angular/material/toolbar';
@@ -13,6 +13,8 @@ import { MatDialogModule } from '@angular/material/dialog';
 import { TaskDialogComponent, TaskDialogResult } from './task-dialog/task-dialog.component';
 import { MatInputModule } from '@angular/material/input';
 import { FormsModule } from '@angular/forms';
+import { Firestore, collectionData, collection } from '@angular/fire/firestore';
+import { Observable, } from 'rxjs';
 
 @Component({
   selector: 'app-root',
@@ -33,7 +35,15 @@ import { FormsModule } from '@angular/forms';
     FormsModule]
 })
 export class AppComponent {
-  constructor(private dialog: MatDialog) { }
+  todo: Observable<Task[]>;
+  inProgress: Observable<Task[]>;
+  done: Observable<Task[]>;
+
+  constructor(private dialog: MatDialog, private store: Firestore) {
+    this.todo = collectionData(collection(store, 'todo')) as Observable<Task[]>;
+    this.inProgress = collectionData(collection(store, 'inProgress')) as Observable<Task[]>;
+    this.done = collectionData(collection(store, 'done')) as Observable<Task[]>;
+  }
 
   newTask(): void {
     const dialogRef = this.dialog.open(TaskDialogComponent, {
@@ -51,21 +61,6 @@ export class AppComponent {
         this.todo.push(result.task);
       });
   }
-  title = 'Ehri-Kanban';
-  inProgress: Task[] = [];
-  done: Task[] = [];
-  todo: Task[] = [
-    {
-      title: 'Buy milk',
-      description: 'Go to the store and buy milk',
-      id: ''
-    },
-    {
-      title: 'Create a Kanban app',
-      description: 'Using Firebase and Angular create a Kanban app!',
-      id: ''
-    }
-  ];
 
   editTask(list: 'done' | 'todo' | 'inProgress', task: Task): void {
     const dialogRef = this.dialog.open(TaskDialogComponent, {
@@ -92,9 +87,14 @@ export class AppComponent {
     if (event.previousContainer === event.container) {
       return;
     }
-    if (!event.container.data || !event.previousContainer.data) {
-      return;
-    }
+    const item = event.previousContainer.data[event.previousIndex];
+    this.store.firestore.runTransaction(() => {
+      const promise = Promise.all([
+        this.store.collection(event.previousContainer.id).doc(item.id).delete(),
+        this.store.collection(event.container.id).add(item),
+      ]);
+      return promise;
+    });
     transferArrayItem(
       event.previousContainer.data,
       event.container.data,
